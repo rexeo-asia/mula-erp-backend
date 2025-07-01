@@ -1,0 +1,54 @@
+# Multi-stage build for Java Spring Boot batch jobs
+FROM maven:3.9.4-eclipse-temurin-21 AS builder
+
+# Set working directory
+WORKDIR /app
+
+# Copy pom.xml first for better Docker layer caching
+COPY pom.xml .
+
+# Download dependencies
+RUN mvn dependency:go-offline -B
+
+# Copy source code
+COPY src ./src
+
+# Build the application
+RUN mvn clean package -DskipTests
+
+# Production stage
+FROM eclipse-temurin:21-jre-alpine
+
+# Install cron and curl
+RUN apk add --no-cache dcron curl
+
+# Create app user
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -S appuser -u 1001 -G appgroup
+
+# Set working directory
+WORKDIR /app
+
+# Create logs directory
+RUN mkdir -p /app/logs && chown -R appuser:appgroup /app
+
+# Copy JAR from builder stage
+COPY --from=builder /app/target/*.jar app.jar
+
+# Change ownership
+RUN chown appuser:appgroup app.jar
+
+# Create cron job script
+RUN echo '#!/bin/sh' > /app/run-batch.sh && \
+    echo 'java -jar -Dspring.profiles.active=batch /app/app.jar' >> /app/run-batch.sh && \
+    chmod +x /app/run-batch.sh && \
+    chown appuser:appgroup /app/run-batch.sh
+
+# Setup cron job (runs at 2 AM daily by default)
+RUN echo '0 2 * * * /app/run-batch.sh >> /app/logs/batch.log 2>&1' > /etc/crontabs/appuser
+
+# Switch to non-root user
+USER appuser
+
+# Start cron daemon
+CMD ["crond", "-f", "-d", "8"]
