@@ -48,7 +48,7 @@ RUN echo '#!/bin/sh' > /app/run-batch.sh && \
 RUN echo '0 2 * * * /app/run-batch.sh >> /app/logs/batch.log 2>&1' > /etc/crontabs/appuser
 
 # Switch to non-root user
-USER appuser
+
 
 # Start cron daemon
-CMD ["crond", "-f", "-d", "8"]
+
